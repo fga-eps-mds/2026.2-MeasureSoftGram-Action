@@ -5,8 +5,8 @@ lint:
 	yarn lint
 
 update-dist:
-	npm install
-	npm run build
+	yarn install --frozen-lockfile
+	yarn build
 
 build: update-dist
 	docker compose up --build
