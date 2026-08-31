@@ -2,9 +2,9 @@ name: Linter
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main,develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main,develop ]
 
 jobs:
   ESLint:
@@ -17,9 +17,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-
-      - name: Instalar yarn
-        run: yarn
+      
+      - name: Instalar dependências
+        run: yarn install --frozen-lockfile
 
       - name: Rodar ESLint + Prettier
         run: yarn lint
+
