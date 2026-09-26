@@ -1,5 +1,4 @@
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from "axios";
-import Sonarqube from "../sonarqube";
 import { CalculatedMsgram } from "./service";
 
 export interface Organization {

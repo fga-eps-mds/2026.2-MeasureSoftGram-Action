@@ -102,7 +102,7 @@ describe('Sonarqube', () => {
     };
 
     const pageSize = 500;
-    const sonar_url = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=files,functions,complexity,comment_lines_density,duplicated_lines_density,coverage,ncloc,tests,test_errors,test_failures,test_execution_time,security_rating,test_success_density,reliability_rating&ps=${pageSize}`;
+    const sonar_url = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=files,sqale_debt_ratio,functions,complexity,comment_lines_density,duplicated_lines_density,coverage,ncloc,tests,test_errors,test_failures,test_execution_time,security_rating,test_success_density,reliability_rating&ps=${pageSize}`;
 
     const measuresResponse = { 
       data: { 
