@@ -102,6 +102,22 @@ yarn build           # compila src/ para dist/ com o ncc
 > algo em `src/`, rode `yarn build` e faça commit do `dist/` atualizado junto com
 > a mudança. O alvo `make update-dist` faz `yarn install` + `yarn build` de uma vez.
 
+## Processo de Release e Deploy de Produção
+
+A entrega da Action segue o modelo de versionamento semântico (`vMAJOR.MINOR.PATCH`) e automação via GitHub Actions:
+
+### Como funciona o deploy automático:
+1. **Ambiente de Produção (`main`):**
+   - A branch canônica de produção é a `main`. Mudanças entram exclusivamente via Pull Request aprovado a partir da branch `develop`.
+   - O workflow `.github/workflows/release.yml` é executado automaticamente em tags semânticas (ex: `v2.2.0`) ou na publicação de releases na `main`.
+2. **Bundle e Tag Flutuante:**
+   - O pipeline compila `dist/index.js` garantindo integridade e paridade com o TypeScript em `src/`.
+   - A **major tag flutuante** (ex: `v2`) é atualizada automaticamente para apontar para a versão mais recente, permitindo que consumidores usem `uses: fga-eps-mds/MeasureSoftGram-Action@v2` e recebam correções sem quebra de contrato.
+3. **Como disparar uma release:**
+   - Crie uma tag anotada a partir da `main` (ex: `git tag -a v2.2.0 -m "Release v2.2.0"` e `git push origin v2.2.0`) ou crie uma nova Release na interface do GitHub.
+4. **Como testar com segurança (Dry-Run):**
+   - É possível executar o workflow manualmente via **Run workflow** (`workflow_dispatch`) marcando a opção `dry_run: true`. Nesse modo, todos os testes, linter e build do bundle são executados sem publicar tags nem alterar releases públicas.
+
 ## Contribuição
 
 Consulte o [Guia de Contribuição](./CONTRIBUTING.md) antes de realizar alterações no projeto.
