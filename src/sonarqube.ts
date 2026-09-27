@@ -35,6 +35,7 @@ export default class Sonarqube {
   }
   public sonarMetrics = [
       'files',
+      'sqale_debt_ratio',
       'functions',
       'complexity',
       'comment_lines_density',
