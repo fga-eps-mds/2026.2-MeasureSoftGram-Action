@@ -114,12 +114,6 @@ jobs:
           echo "Atualizando tag flutuante $MAJOR_TAG..."
           git tag -fa "$MAJOR_TAG" -m "Atualização da tag flutuante $MAJOR_TAG para $TAG_NAME"
           git push origin "$MAJOR_TAG" --force
-
-          if [ "$MAJOR_TAG" != "v1" ]; then
-            echo "Mantendo tag flutuante v1 sincronizada..."
-            git tag -fa "v1" -m "Atualização da tag flutuante v1 para $TAG_NAME"
-            git push origin "v1" --force
-          fi
           
           echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
 
