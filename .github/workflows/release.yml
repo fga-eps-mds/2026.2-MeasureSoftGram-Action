@@ -1,0 +1,135 @@
+name: Release & Dist Bundle
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Executar em modo dry-run (não cria release nem move tags de produção)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 20.x
+          cache: 'yarn'
+
+      - name: Instalar dependências
+        run: yarn install --frozen-lockfile
+
+      - name: Validar linting
+        run: yarn lint
+
+      - name: Executar testes unitários
+        run: yarn run jest --coverage --ci --silent
+
+      - name: Auto-Bump de Versão para Estável (se vier pré-release da develop)
+        id: bump
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.dry_run != true
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Versao atual em package.json: $CURRENT_VERSION"
+          
+          # Se contiver sufixo de pré-release (-rc, -alpha, etc), converte para versão estável
+          if [[ "$CURRENT_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            STABLE_VERSION="${BASH_REMATCH[1]}"
+            if [ "$CURRENT_VERSION" != "$STABLE_VERSION" ]; then
+              echo "Detectada versao pre-release ($CURRENT_VERSION). Realizando bump automatico para estavel ($STABLE_VERSION)..."
+              npm version "$STABLE_VERSION" --no-git-tag-version --allow-same-version
+              
+              # Recompila o bundle dist com os metadados estáveis
+              yarn run build
+              
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add package.json dist/
+              git commit -m "chore(release): bump versao estavel para $STABLE_VERSION [skip ci]"
+              git push origin main
+              
+              FINAL_VERSION="$STABLE_VERSION"
+            else
+              FINAL_VERSION="$CURRENT_VERSION"
+            fi
+          else
+            FINAL_VERSION="$CURRENT_VERSION"
+          fi
+          
+          echo "final_version=$FINAL_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=v$FINAL_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Compilar bundle de distribuição (dist/)
+        run: yarn run build
+
+      - name: Verificar integridade do bundle compilado
+        run: |
+          if [ ! -f dist/index.js ]; then
+            echo "::error::dist/index.js não foi gerado pelo build!"
+            exit 1
+          fi
+          echo "Bundle compilado com sucesso: $(ls -lh dist/index.js | awk '{print $5}')"
+
+      - name: Criar Tag Semântica e Atualizar Tag Flutuante v1
+        if: inputs.dry_run != true
+        run: |
+          TAG_NAME="${{ steps.bump.outputs.tag_name }}"
+          if [ -z "$TAG_NAME" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              TAG_NAME="${GITHUB_REF#refs/tags/}"
+            else
+              TAG_NAME="v$(node -p "require('./package.json').version")"
+            fi
+          fi
+          
+          MAJOR_TAG=$(echo "$TAG_NAME" | cut -d. -f1)
+          if [[ "$MAJOR_TAG" != v* ]]; then
+            MAJOR_TAG="v$MAJOR_TAG"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Criando/atualizando tag semantica $TAG_NAME..."
+          git tag -fa "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME" --force
+
+          echo "Atualizando tag flutuante $MAJOR_TAG..."
+          git tag -fa "$MAJOR_TAG" -m "Atualização da tag flutuante $MAJOR_TAG para $TAG_NAME"
+          git push origin "$MAJOR_TAG" --force
+
+          if [ "$MAJOR_TAG" != "v1" ]; then
+            echo "Mantendo tag flutuante v1 sincronizada..."
+            git tag -fa "v1" -m "Atualização da tag flutuante v1 para $TAG_NAME"
+            git push origin "v1" --force
+          fi
+          
+          echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
+
+      - name: Criar ou atualizar GitHub Release
+        if: inputs.dry_run != true
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb872386f83bc9b37e28b6a # v2.0.8
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: |
+            dist/index.js
+            dist/licenses.txt
+            action.yml

@@ -51,7 +51,7 @@ jobs:
 
       - name: Action MeasureSoftGram
         id: msgram
-        uses: fga-eps-mds/MeasureSoftGram-Action@v2.1.5
+        uses: fga-eps-mds/MeasureSoftGram-Action@v1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           sonarProjectKey: "nome-da-org_nome-do-repositorio"
@@ -78,12 +78,20 @@ jobs:
 
 Lembre-se que é necessário que você disponha do seu token do GitHub para executar o MeasureSoftGram. Recomendamos o uso dos [Segredos do GitHub](https://docs.github.com/pt/actions/security-guides/encrypted-secrets#creating-encrypted-secrets-for-a-repository) para armazenar estas credenciais de forma segura.
 
-
 ## Resultados da análise no pull request
 
 Os resultados são adicionados ao website do MeasureSoftwareGram e exibidos nesse gráfico:
 
 ![Resultado Web](./assets/images/resultado_msgram.png)
+
+## Release e Versionamento
+
+O repositório adota versionamento semântico automatizado através do GitHub Actions:
+
+- **Tag Flutuante Canônica (`@v1`):** Recomendada para todos os repositórios clientes. A tag `v1` é automaticamente atualizada a cada nova release estável da versão maior 1, garantindo correções e melhorias retrocompatíveis sem necessidade de atualização manual.
+- **Tags Semânticas Fixas (ex: `@v1.0.0`):** Disponíveis para fluxos que necessitam fixar uma versão exata imutável.
+- **Automação de Release:** A cada merge na branch `main`, o workflow de release (`.github/workflows/release.yml`) valida lint e testes, realiza o auto-bump de versões de pré-release para estáveis, gera o bundle de distribuição (`dist/index.js`), cria a tag Git correspondente, atualiza a tag flutuante `v1` e publica a GitHub Release com todos os artefatos.
+
 ## Desenvolvimento local
 
 O gerenciador de pacotes padrão deste repositório é o **Yarn** (o `yarn.lock` é o
