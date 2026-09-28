@@ -13555,6 +13555,7 @@ class Sonarqube {
     constructor(info) {
         this.sonarMetrics = [
             'files',
+            'sqale_debt_ratio',
             'functions',
             'complexity',
             'comment_lines_density',
