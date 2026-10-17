@@ -9,17 +9,17 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+      - name: Setup Node.js 20 com cache do Yarn
+        uses: actions/setup-node@0a44ba7841725637a54283210aa2cf365f9f2995 # v4.4.0
         with:
           node-version: 20.x
+          cache: 'yarn'
 
       - name: Instalar dependências
         run: yarn install --frozen-lockfile
@@ -27,7 +27,7 @@ jobs:
       - name: Rodar Linter (ESLint + Prettier)
         run: yarn lint
 
-      - name: Rodar testes
+      - name: Rodar testes unitários com cobertura
         run: yarn run jest --coverage --ci --silent
 
       - name: Validar integridade e compilação do bundle (dist/)
@@ -39,16 +39,29 @@ jobs:
             exit 1
           fi
 
-      - name: SonarQube Scan
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+      - name: SonarCloud Scanner
+        # O SonarCloud só deve ser executado se:
+        # 1. Não for disparado pelo Dependabot (que não possui acesso aos secrets de Actions)
+        # 2. O evento for push (merge) OU um PR interno do próprio repositório (não fork externo)
+        if: >-
+          github.actor != 'dependabot[bot]' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        # 'sonar.qualitygate.wait=true' pausa a execução do step e consulta a API do SonarCloud
+        # até a conclusão da análise. Se o Quality Gate for reprovado (cobertura insuficiente, bugs,
+        # code smells), o scanner encerra com código de erro diferente de zero e quebra o CI na hora.
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+            -Dsonar.qualitygate.wait=true
 
-      - name: Aviso de SonarQube ignorado (Pull Request de Fork)
-        if: env.SONAR_TOKEN == ''
-        run: echo "::notice::SONAR_TOKEN ausente (execução em fork público). Etapa de análise do SonarQube ignorada com segurança."
+      - name: Aviso de SonarCloud ignorado (Pull Request externo ou Dependabot)
+        if: >-
+          github.actor == 'dependabot[bot]' ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name != github.repository)
+        run: echo "::notice::Execução em fork externo ou ator Dependabot sem acesso aos secrets. Análise do SonarCloud ignorada com segurança."
