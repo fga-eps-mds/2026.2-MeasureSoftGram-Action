@@ -94,7 +94,8 @@ export default class Sonarqube {
         components.push(...nextPage.components)
       }
 
-      console.log(`SonarQube components: ${components.length} of ${paging?.total} (${Math.max(totalPages, 1)} page(s))`)
+      const expectedTotal = Number(paging?.total) || 0
+      console.log(`SonarQube components: ${components.length} of ${expectedTotal} (${Math.max(totalPages, 1)} page(s))`)
 
       return { ...firstPage, components }
     } catch (err) {

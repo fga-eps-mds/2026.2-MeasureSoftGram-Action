@@ -17222,7 +17222,8 @@ class Sonarqube {
                     const nextPage = await this.getMeasuresPage(sonar_url, page);
                     components.push(...nextPage.components);
                 }
-                console.log(`SonarQube components: ${components.length} of ${paging === null || paging === void 0 ? void 0 : paging.total} (${Math.max(totalPages, 1)} page(s))`);
+                const expectedTotal = Number(paging === null || paging === void 0 ? void 0 : paging.total) || 0;
+                console.log(`SonarQube components: ${components.length} of ${expectedTotal} (${Math.max(totalPages, 1)} page(s))`);
                 return Object.assign(Object.assign({}, firstPage), { components });
             }
             catch (err) {
