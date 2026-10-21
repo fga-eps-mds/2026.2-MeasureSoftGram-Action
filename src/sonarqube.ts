@@ -2,6 +2,8 @@ import axios, { AxiosInstance } from 'axios';
 
 import { Info } from './utils';
 
+const MEASURES_ERROR_MESSAGE = 'Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.'
+
 export interface MetricsResponseAPI {
   paging: {
       pageIndex: number
@@ -15,7 +17,7 @@ export interface MetricsResponseAPI {
       qualifier: string
       measures: [unknown]
   },
-  components: [{
+  components: {
       id: string
       key: string
       name: string
@@ -23,7 +25,7 @@ export interface MetricsResponseAPI {
       path: string
       language: string
       measures: unknown
-  }],
+  }[],
 }
 
 export default class Sonarqube {
@@ -73,6 +75,7 @@ export default class Sonarqube {
       pageSize: number,
       pullRequestNumber: number | null
     }): Promise<MetricsResponseAPI> => {
+    let page = 1
     try {
       let sonar_url = `/api/measures/component_tree?component=${this.project.sonarProjectKey}&metricKeys=${this.sonarMetrics.join(',')}&ps=${pageSize}`
 
@@ -81,19 +84,32 @@ export default class Sonarqube {
       }
       console.log(`SonarQube URL: ${sonar_url}`)
 
-      const response = await this.http.get<MetricsResponseAPI>(sonar_url);
+      const firstPage = await this.getMeasuresPage(sonar_url, page)
+      const components = [...firstPage.components]
+      const { paging } = firstPage
+      const totalPages = paging && paging.pageSize > 0 ? Math.ceil(paging.total / paging.pageSize) : 1
 
-      if (response.status !== 200 || !response.data) {
-        throw new Error(
-          'Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.'
-        )
+      for (page = 2; page <= totalPages; page++) {
+        const nextPage = await this.getMeasuresPage(sonar_url, page)
+        components.push(...nextPage.components)
       }
 
-      return response.data        
+      console.log(`SonarQube components: ${components.length} of ${paging?.total} (${Math.max(totalPages, 1)} page(s))`)
+
+      return { ...firstPage, components }
     } catch (err) {
-      throw new Error(
-        'Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.'
-      )
+      console.error(`Error getting SonarQube measures page ${page}: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(MEASURES_ERROR_MESSAGE)
     }
+  }
+
+  private getMeasuresPage = async (sonar_url: string, page: number): Promise<MetricsResponseAPI> => {
+    const response = await this.http.get<MetricsResponseAPI>(`${sonar_url}&p=${page}`);
+
+    if (response.status !== 200 || !response.data) {
+      throw new Error(`Unexpected response status ${response.status}`)
+    }
+
+    return response.data
   }
 }

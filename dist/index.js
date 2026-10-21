@@ -17186,6 +17186,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const axios_1 = __importDefault(__nccwpck_require__(8757));
+const MEASURES_ERROR_MESSAGE = 'Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.';
 class Sonarqube {
     constructor(info) {
         this.sonarMetrics = [
@@ -17206,21 +17207,35 @@ class Sonarqube {
             'reliability_rating',
         ];
         this.getMeasures = async ({ pageSize, pullRequestNumber }) => {
+            let page = 1;
             try {
                 let sonar_url = `/api/measures/component_tree?component=${this.project.sonarProjectKey}&metricKeys=${this.sonarMetrics.join(',')}&ps=${pageSize}`;
                 if (pullRequestNumber) {
                     sonar_url += `&pullRequest=${pullRequestNumber}`;
                 }
                 console.log(`SonarQube URL: ${sonar_url}`);
-                const response = await this.http.get(sonar_url);
-                if (response.status !== 200 || !response.data) {
-                    throw new Error('Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.');
+                const firstPage = await this.getMeasuresPage(sonar_url, page);
+                const components = [...firstPage.components];
+                const { paging } = firstPage;
+                const totalPages = paging && paging.pageSize > 0 ? Math.ceil(paging.total / paging.pageSize) : 1;
+                for (page = 2; page <= totalPages; page++) {
+                    const nextPage = await this.getMeasuresPage(sonar_url, page);
+                    components.push(...nextPage.components);
                 }
-                return response.data;
+                console.log(`SonarQube components: ${components.length} of ${paging === null || paging === void 0 ? void 0 : paging.total} (${Math.max(totalPages, 1)} page(s))`);
+                return Object.assign(Object.assign({}, firstPage), { components });
             }
             catch (err) {
-                throw new Error('Error getting project measures from SonarQube. Please make sure you provided the host and token inputs.');
+                console.error(`Error getting SonarQube measures page ${page}: ${err instanceof Error ? err.message : String(err)}`);
+                throw new Error(MEASURES_ERROR_MESSAGE);
             }
+        };
+        this.getMeasuresPage = async (sonar_url, page) => {
+            const response = await this.http.get(`${sonar_url}&p=${page}`);
+            if (response.status !== 200 || !response.data) {
+                throw new Error(`Unexpected response status ${response.status}`);
+            }
+            return response.data;
         };
         this.host = info.host || 'https://sonarcloud.io';
         this.token = info.token;
