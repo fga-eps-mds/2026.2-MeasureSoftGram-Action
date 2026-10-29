@@ -57,4 +57,5 @@ export async function run() {
   }
 }
 
-run()
+// run() já trata os próprios erros com core.setFailed; o void deixa explícito que a promise não é aguardada.
+void run()
