@@ -54,6 +54,17 @@ describe('GitHub metrics collection', () => {
     await expect(new GithubAPIService(info).fetchGithubMetrics('Tests')).rejects.toThrow('Error getting project measures');
   });
 
+  test.each([403, 429, 500])('rejects issue metrics returned with HTTP %i', async status => {
+    get.mockResolvedValueOnce({ status, data: { message: 'API request failed' } })
+      .mockResolvedValueOnce({ status: 200, data: { total_count: 2 } });
+
+    await expect(new GithubAPIService(info).fetchGithubMetrics('Tests')).rejects.toThrow(
+      'Error getting project measures from GitHub'
+    );
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls.some(([url]) => url.includes('/actions/runs'))).toBe(false);
+  });
+
   test('keeps throughput when workflow collection fails', async () => {
     get.mockResolvedValueOnce({ status: 200, data: { total_count: 1 } })
       .mockResolvedValueOnce({ status: 200, data: { total_count: 2 } })
