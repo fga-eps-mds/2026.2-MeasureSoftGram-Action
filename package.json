@@ -6,9 +6,9 @@
   "scripts": {
     "build": "ncc build src/index.ts --source-map --license licenses.txt --out dist",
     "lint": "eslint src/ --ext .ts",
-    "test": "jest src/ --coverage --passWithNoTests",
-    "test:watch": "jest src/ --watch --coverage --onlyChanged --passWithNoTests",
-    "ci:test": "jest --passWithNoTests"
+    "test": "jest --coverage",
+    "test:watch": "jest --watch --coverage --onlyChanged",
+    "ci:test": "jest --coverage --ci"
   },
   "repository": {
     "type": "git",
