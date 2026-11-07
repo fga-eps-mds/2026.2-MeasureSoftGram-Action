@@ -16750,7 +16750,7 @@ class GithubAPIService {
         }
         try {
             const response = await axios_1.default.get(url, { headers });
-            return response.status === 200 ? response.data : {};
+            return response.status === 200 ? response.data : null;
         }
         catch (e) {
             console.error('Error making request to Github API at URL:', url, e);
@@ -16979,7 +16979,7 @@ async function run() {
     }
 }
 exports.run = run;
-run();
+void run();
 
 
 /***/ }),

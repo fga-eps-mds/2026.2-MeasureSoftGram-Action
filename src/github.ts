@@ -64,7 +64,7 @@ export default class GithubAPIService {
     }
     try {
       const response: AxiosResponse = await axios.get<T>(url, { headers })
-      return response.status === 200 ? response.data : {}
+      return response.status === 200 ? response.data : null
     } catch (e) {
       console.error('Error making request to Github API at URL:', url, e)
       return null
