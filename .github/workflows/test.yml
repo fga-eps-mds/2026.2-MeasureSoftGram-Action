@@ -28,7 +28,7 @@ jobs:
         run: yarn lint
 
       - name: Rodar testes unitários com cobertura
-        run: yarn run jest --coverage --ci --silent
+        run: yarn ci:test --silent
 
       - name: Validar integridade e compilação do bundle (dist/)
         # PRs do Dependabot têm o dist/ recompilado pelo workflow dependabot-dist.yml
@@ -67,3 +67,16 @@ jobs:
           (github.event_name == 'pull_request' &&
            github.event.pull_request.head.repo.full_name != github.repository)
         run: echo "::notice::Execução em fork externo ou ator Dependabot sem acesso aos secrets. Análise do SonarCloud ignorada com segurança."
+
+      # Artefatos salvos no CI para auditoria manual
+      - name: Preservar relatórios de testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            coverage.xml
+            coverage/lcov.info
+            coverage/coverage-summary.json

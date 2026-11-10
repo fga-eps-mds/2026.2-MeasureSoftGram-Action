@@ -13,6 +13,8 @@ export default {
   testMatch: [
     "**/__tests__/**/*.test.ts?(x)",
   ],
+  collectCoverageFrom: ['src/**/*.ts'],
+  coverageReporters: ['text', 'lcov', 'json-summary'],
   coverageDirectory: 'coverage',
   reporters: [
     'default',
