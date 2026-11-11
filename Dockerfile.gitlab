@@ -1,0 +1,37 @@
+# ============================================================
+# Imagem do coletor do MeasureSoftGram para GitLab Runners (src/gitlab.ts).
+#   builder -> instala as dependências e empacota o coletor com o ncc
+#   runner  -> só o Node e o index.js empacotado, sem node_modules
+#
+# Não define ENTRYPOINT: o GitLab Runner precisa de um shell para rodar o
+# `script` do job. Uso no .gitlab-ci.yml:
+#   image: <registry>/action-gitlab:latest
+#   script: node /opt/msgram/index.js
+#
+# O coletor só roda com GITLAB_CI=true, variável que o runner sempre define.
+# ============================================================
+
+# ---------- builder ----------
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+# Camada de dependências: só invalida quando o lockfile muda.
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --ignore-scripts
+
+COPY tsconfig.json ./
+COPY src ./src
+RUN yarn ncc build src/gitlab.ts --license licenses.txt --out /out
+
+# ---------- runner ----------
+FROM node:20-alpine AS runner
+
+ENV NODE_ENV=production
+
+WORKDIR /opt/msgram
+COPY --from=builder /out ./
+
+USER node
+
+CMD ["node", "/opt/msgram/index.js"]
