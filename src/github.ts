@@ -35,6 +35,11 @@ interface WorkflowRun {
   updated_at: string
 }
 
+interface DependabotAlert {
+  number: number
+  state: string
+}
+
 export default class GithubAPIService {
   public host: string
   private token: string
@@ -171,6 +176,55 @@ export default class GithubAPIService {
       },
     ]
   }
+  private async getSecurityAlerts(
+    baseUrl: string,
+    token: string | null = null
+  ): Promise<Array<{
+    name: string
+    value: number
+  }> | null> {
+    const perPage = 100
+    let page = 1
+    let openAlerts = 0
+    let closedAlerts = 0
+
+    for (;;) {
+      const url = `${baseUrl}/dependabot/alerts?per_page=${perPage}&page=${page}`
+      const alerts = await this.makeRequest<Array<DependabotAlert>>(url, token)
+
+      // Repositório sem Dependabot habilitado, sem permissão de security_events
+      // ou em plano que não expõe alertas responde 403/404, e makeRequest
+      // devolve null. Nesse caso as duas métricas ficam de fora do payload e
+      // apenas a medida dependente deixa de ser calculada, em vez de derrubar
+      // a execução da Action.
+      if (alerts === null || !Array.isArray(alerts)) {
+        console.log('Github security alerts are not available for this repository. Skipping security alert metrics.')
+        return null
+      }
+
+      alerts.forEach(alert => {
+        if (alert.state === 'open') {
+          openAlerts++
+        } else {
+          closedAlerts++
+        }
+      })
+
+      if (alerts.length < perPage) {
+        break
+      }
+
+      page++
+    }
+
+    // Lista vazia é resposta válida: significa repositório sem alerta algum,
+    // que é diferente de alerta indisponível e por isso vira 0 e 0.
+    return [
+      { name: 'security_alerts_open', value: openAlerts },
+      { name: 'security_alerts_closed', value: closedAlerts },
+    ]
+  }
+
   public fetchGithubMetrics = async (workflowName: string): Promise<GithubMetricsResponse> => {
     const response: GithubMetricsResponse = {
       metrics: [],
@@ -200,6 +254,19 @@ export default class GithubAPIService {
         })
       )
     }
+
+    const securityAlerts = await this.getSecurityAlerts(urlCi, this.token)
+
+    if (securityAlerts) {
+      securityAlerts.forEach(securityAlert =>
+        response.metrics.push({
+          name: securityAlert.name,
+          value: securityAlert.value,
+          path: `${this.owner}/${this.repository}`,
+        })
+      )
+    }
+
     return response
   }
 }
