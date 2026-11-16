@@ -5,6 +5,15 @@ import { Info } from '../src/utils';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+// A lista de metricas pedidas ao SonarQube cresce a cada medida nova, entao a
+// URL esperada e derivada da propria classe em vez de repetida como string
+// fixa, que obrigava a reescrever estes testes a cada metrica acrescentada.
+const SONAR_METRIC_KEYS = new Sonarqube({
+  host: 'http://localhost:9000',
+  token: '',
+  project: { sonarProjectKey: 'sonarProjectKey' },
+}).sonarMetrics.join(',');
+
 describe('Sonarqube', () => {
   beforeEach(() => {
     // Reset calls and queued implementations, so a response left unused by one test does not leak into the next:
@@ -92,6 +101,55 @@ describe('Sonarqube', () => {
   });
    
 
+  describe('security metrics (SAST)', () => {
+    const info: Info = {
+      host: 'http://localhost:9000',
+      token: '123456',
+      project: {
+        sonarProjectKey: 'sonarProjectKey',
+      },
+    };
+
+    test.each([
+      'security_rating',
+      'vulnerabilities',
+      'security_hotspots',
+      'security_review_rating',
+    ])('should request %s from SonarQube', metric => {
+      const sonarqube = new Sonarqube(info);
+
+      expect(sonarqube.sonarMetrics).toContain(metric);
+    });
+
+    test('should carry the security metrics in the component_tree URL', async () => {
+      const pageSize = 500;
+      const measuresResponse = {
+        data: {
+          paging: { pageIndex: 1, pageSize, total: 0 },
+          baseComponent: {},
+          components: [],
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {},
+      };
+
+      mockedAxios.create.mockImplementationOnce(() => mockedAxios);
+      mockedAxios.get.mockResolvedValue(measuresResponse);
+
+      const sonarqube = new Sonarqube(info);
+      await sonarqube.getMeasures({ pageSize, pullRequestNumber: null });
+
+      const requestedUrl = mockedAxios.get.mock.calls[0][0] as string;
+
+      expect(requestedUrl).toContain('security_rating');
+      expect(requestedUrl).toContain('vulnerabilities');
+      expect(requestedUrl).toContain('security_hotspots');
+      expect(requestedUrl).toContain('security_review_rating');
+    });
+  });
+
   test('getMeasures should make a correct axios call', async () => {
     const info: Info = {
       host: 'http://localhost:9000',
@@ -102,7 +160,7 @@ describe('Sonarqube', () => {
     };
 
     const pageSize = 500;
-    const sonar_url = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=files,sqale_debt_ratio,functions,complexity,comment_lines_density,duplicated_lines_density,coverage,ncloc,tests,test_errors,test_failures,test_execution_time,security_rating,test_success_density,reliability_rating&ps=${pageSize}&p=1`;
+    const sonar_url = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=${SONAR_METRIC_KEYS}&ps=${pageSize}&p=1`;
 
     const measuresResponse = { 
       data: { 
@@ -195,7 +253,7 @@ describe('Sonarqube', () => {
       },
     };
     const pageSize = 2;
-    const baseUrl = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=files,sqale_debt_ratio,functions,complexity,comment_lines_density,duplicated_lines_density,coverage,ncloc,tests,test_errors,test_failures,test_execution_time,security_rating,test_success_density,reliability_rating&ps=${pageSize}`;
+    const baseUrl = `/api/measures/component_tree?component=${info.project.sonarProjectKey}&metricKeys=${SONAR_METRIC_KEYS}&ps=${pageSize}`;
     const baseComponent = { id: 'base', key: 'sonarProjectKey', name: 'project', qualifier: 'TRK', measures: [] };
     const component = (key: string) => ({
       id: key, key, name: key, qualifier: 'FIL', path: key, language: 'ts', measures: [],

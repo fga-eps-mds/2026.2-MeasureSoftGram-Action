@@ -65,6 +65,91 @@ describe('GitHub metrics collection', () => {
     expect(get.mock.calls.some(([url]) => url.includes('/actions/runs'))).toBe(false);
   });
 
+  describe('security alerts (SCM)', () => {
+    // As quatro primeiras respostas cobrem as chamadas de issues e de
+    // workflow runs; a partir da quinta vem /dependabot/alerts.
+    const mockIssuesAndRuns = () =>
+      get.mockResolvedValueOnce({ status: 200, data: { total_count: 1 } })
+        .mockResolvedValueOnce({ status: 200, data: { total_count: 2 } })
+        .mockResolvedValueOnce({ status: 200, data: { total_count: 0, workflow_runs: [] } });
+
+    const securityMetrics = (metrics: Array<{ name: string; value: number | string | null }>) =>
+      metrics.filter(metric => metric.name.startsWith('security_alerts'));
+
+    test('counts open and closed alerts', async () => {
+      mockIssuesAndRuns().mockResolvedValueOnce({ status: 200, data: [
+        { number: 1, state: 'open' },
+        { number: 2, state: 'fixed' },
+        { number: 3, state: 'dismissed' },
+        { number: 4, state: 'open' },
+      ] });
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([
+        { name: 'security_alerts_open', value: 2, path: 'team/product' },
+        { name: 'security_alerts_closed', value: 2, path: 'team/product' },
+      ]);
+      expect(get.mock.calls.some(([url]) => url.includes('/dependabot/alerts'))).toBe(true);
+    });
+
+    test('reports zero alerts for a repository without any alert', async () => {
+      mockIssuesAndRuns().mockResolvedValueOnce({ status: 200, data: [] });
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([
+        { name: 'security_alerts_open', value: 0, path: 'team/product' },
+        { name: 'security_alerts_closed', value: 0, path: 'team/product' },
+      ]);
+    });
+
+    test('paginates the alert list', async () => {
+      const fullPage = Array.from({ length: 100 }, (_, index) => ({ number: index, state: 'open' }));
+      mockIssuesAndRuns()
+        .mockResolvedValueOnce({ status: 200, data: fullPage })
+        .mockResolvedValueOnce({ status: 200, data: [{ number: 100, state: 'fixed' }] });
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([
+        { name: 'security_alerts_open', value: 100, path: 'team/product' },
+        { name: 'security_alerts_closed', value: 1, path: 'team/product' },
+      ]);
+      expect(get.mock.calls.filter(([url]) => url.includes('/dependabot/alerts'))).toHaveLength(2);
+    });
+
+    test.each([403, 404])('omits the metrics when alerts answer HTTP %i, without breaking the run', async status => {
+      mockIssuesAndRuns().mockResolvedValueOnce({ status, data: { message: 'Dependabot alerts are disabled' } });
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([]);
+      expect(result.metrics.map(metric => metric.name)).toEqual([
+        'sum_ci_feedback_times',
+        'total_builds',
+        'total_issues',
+        'resolved_issues',
+      ]);
+    });
+
+    test('omits the metrics when the alerts request fails', async () => {
+      mockIssuesAndRuns().mockRejectedValueOnce(new Error('unavailable'));
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([]);
+    });
+
+    test('omits the metrics when the alerts payload is not a list', async () => {
+      mockIssuesAndRuns().mockResolvedValueOnce({ status: 200, data: { message: 'unexpected' } });
+
+      const result = await new GithubAPIService(info).fetchGithubMetrics('Tests');
+
+      expect(securityMetrics(result.metrics)).toEqual([]);
+    });
+  });
+
   test('keeps throughput when workflow collection fails', async () => {
     get.mockResolvedValueOnce({ status: 200, data: { total_count: 1 } })
       .mockResolvedValueOnce({ status: 200, data: { total_count: 2 } })

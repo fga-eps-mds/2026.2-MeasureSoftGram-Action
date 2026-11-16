@@ -45,6 +45,12 @@ on:
 jobs:
   msgram_job:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: write
+      vulnerability-alerts: read
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -75,6 +81,8 @@ jobs:
 | `collectSonarqubeMetrics` | sim         | Determina se serão coletadas métricas do Sonarqube                                                                                                                          |
 | `collectGithubMetrics`    | sim         | Determina se serão coletadas métricas do Github                                                                                                                             |
 | `usLabel`                 | não         | Label usada para se referir a Histórias de Usuário no seu projeto                                                                                                           |
+
+A permissão `vulnerability-alerts: read` permite ao `GITHUB_TOKEN` ler os alertas do Dependabot, usados nas métricas `security_alerts_open` e `security_alerts_closed`. Sem ela, essas duas métricas ficam de fora da coleta e as demais seguem normalmente.
 
 Lembre-se que é necessário que você disponha do seu token do GitHub para executar o MeasureSoftGram. Recomendamos o uso dos [Segredos do GitHub](https://docs.github.com/pt/actions/security-guides/encrypted-secrets#creating-encrypted-secrets-for-a-repository) para armazenar estas credenciais de forma segura.
 
