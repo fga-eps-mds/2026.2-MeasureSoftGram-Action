@@ -51,9 +51,6 @@ export default class Sonarqube {
       'security_rating',
       'test_success_density',
       'reliability_rating',
-      'vulnerabilities',
-      'security_hotspots',
-      'security_review_rating',
   ]
 
   constructor(info: Info) {
