@@ -23,8 +23,5 @@ action-msgram:
 action-test:
 	docker exec -it msgram-action act -j pipeline -W .github/workflows/linter.yml
 
-action-metrics:
-	docker exec -it msgram-action act -j release -W .github/workflows/metrics.yml
-
 action-linter:
 	docker exec -it msgram-action act -j ESLint -W .github/workflows/linter.yml
