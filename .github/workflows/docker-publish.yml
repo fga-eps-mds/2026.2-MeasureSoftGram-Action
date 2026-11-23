@@ -13,7 +13,10 @@ permissions:
 
 jobs:
   build-and-push:
-    if: github.event.pull_request.merged == true
+    # PR de fork recebe token só de leitura e não consegue publicar no GHCR
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
 
     steps:

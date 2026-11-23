@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # disparado pelo dependabot-dist.yml no commit do dist/ recompilado
+  workflow_dispatch:
 
 jobs:
   pipeline:
@@ -31,8 +33,8 @@ jobs:
         run: yarn ci:test --silent
 
       - name: Validar integridade e compilação do bundle (dist/)
-        # PRs do Dependabot têm o dist/ recompilado pelo workflow dependabot-dist.yml
-        if: github.actor != 'dependabot[bot]'
+        # vale também para o Dependabot: com o dist/ desatualizado o pipeline falha e o
+        # auto-merge espera o commit do dependabot-dist.yml, validado por outra execução
         run: |
           yarn run build
           if [ -n "$(git status --porcelain dist/)" ]; then
@@ -45,8 +47,10 @@ jobs:
         # O SonarCloud só deve ser executado se:
         # 1. Não for disparado pelo Dependabot (que não possui acesso aos secrets de Actions)
         # 2. O evento for push (merge) OU um PR interno do próprio repositório (não fork externo)
+        # 3. Não for a execução disparada pelo dependabot-dist.yml (branch do Dependabot)
         if: >-
           github.actor != 'dependabot[bot]' &&
+          github.event_name != 'workflow_dispatch' &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.full_name == github.repository)
         # 'sonar.qualitygate.wait=true' pausa a execução do step e consulta a API do SonarCloud
@@ -64,6 +68,7 @@ jobs:
       - name: Aviso de SonarCloud ignorado (Pull Request externo ou Dependabot)
         if: >-
           github.actor == 'dependabot[bot]' ||
+          github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'pull_request' &&
            github.event.pull_request.head.repo.full_name != github.repository)
         run: echo "::notice::Execução em fork externo ou ator Dependabot sem acesso aos secrets. Análise do SonarCloud ignorada com segurança."
