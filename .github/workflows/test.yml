@@ -5,17 +5,28 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-  # disparado pelo dependabot-dist.yml no commit do dist/ recompilado
+  # disparado pelo próprio pipeline no commit do dist/ recompilado de um PR do Dependabot
   workflow_dispatch:
 
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # só o passo do Dependabot faz push; PR de fork continua só leitura
+      actions: write    # disparar este workflow no commit do dist/ recompilado
+    env:
+      DEPENDABOT_PR: >-
+        ${{ github.event.pull_request.user.login == 'dependabot[bot]' &&
+            github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - name: Checkout do código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # no PR do Dependabot, o branch do PR (e não o merge commit) para poder comitar o dist/
+          ref: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && github.head_ref || '' }}
+          # o token não fica no .git/config enquanto as dependências rodam
+          persist-credentials: false
 
       - name: Setup Node.js 24 com cache do Yarn
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -23,8 +34,36 @@ jobs:
           node-version: 24.x
           cache: 'yarn'
 
+      # o build e os testes não dependem de scripts de instalação; sem eles, uma
+      # dependência recém-atualizada não executa nada durante o install
       - name: Instalar dependências
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      # Antes do lint e dos testes, para o head do PR mudar o quanto antes: o check
+      # verde deste commit deixa de ser o do head, e o auto-merge espera a execução
+      # disparada no commit novo, que valida o dist/ comitado.
+      - name: Recompilar e comitar o dist/ (PR do Dependabot)
+        if: env.DEPENDABOT_PR == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          yarn run build
+          if [ -z "$(git status --porcelain dist/)" ]; then
+            echo "::notice::O bundle dist/ já está atualizado."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dist/
+          git commit -m "build(dist): recompila o bundle após atualização de dependências"
+          AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$AUTH"
+          git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+            push origin "HEAD:refs/heads/$HEAD_REF"
+          # push com o GITHUB_TOKEN não dispara workflows; o workflow_dispatch é exceção
+          gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
 
       - name: Rodar Linter (ESLint + Prettier)
         run: yarn lint
@@ -33,8 +72,7 @@ jobs:
         run: yarn ci:test --silent
 
       - name: Validar integridade e compilação do bundle (dist/)
-        # vale também para o Dependabot: com o dist/ desatualizado o pipeline falha e o
-        # auto-merge espera o commit do dependabot-dist.yml, validado por outra execução
+        # vale para todos, inclusive o Dependabot (o passo anterior já comitou o dist/)
         run: |
           yarn run build
           if [ -n "$(git status --porcelain dist/)" ]; then
@@ -47,7 +85,7 @@ jobs:
         # O SonarCloud só deve ser executado se:
         # 1. Não for disparado pelo Dependabot (que não possui acesso aos secrets de Actions)
         # 2. O evento for push (merge) OU um PR interno do próprio repositório (não fork externo)
-        # 3. Não for a execução disparada pelo dependabot-dist.yml (branch do Dependabot)
+        # 3. Não for a execução disparada no commit do dist/ do Dependabot (workflow_dispatch)
         if: >-
           github.actor != 'dependabot[bot]' &&
           github.event_name != 'workflow_dispatch' &&
