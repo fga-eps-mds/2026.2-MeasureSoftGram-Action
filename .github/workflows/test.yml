@@ -72,7 +72,9 @@ jobs:
       contents: write
       actions: write
     outputs:
-      pushed: ${{ steps.push.outputs.pushed }}
+      # true quando o commit analisado deixou de ser o head: o dist/ foi enviado agora
+      # ou o branch já andou; nos dois casos o commit novo tem a própria execução
+      superseded: ${{ steps.push.outputs.superseded || steps.stale.outputs.superseded }}
     env:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -84,11 +86,13 @@ jobs:
           persist-credentials: false
 
       - name: Conferir que o branch não andou
+        id: stale
         run: |
           # se o Dependabot empurrou outro commit, a execução desse commit cuida do dist/
           if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
             echo "::notice::O branch $HEAD_REF mudou desde o build; nada a comitar."
             echo "STALE=true" >> "$GITHUB_ENV"
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Substituir o dist/ pelo recompilado
@@ -117,16 +121,19 @@ jobs:
           echo "::add-mask::$AUTH"
           git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
             push origin "HEAD:refs/heads/$HEAD_REF"
-          echo "pushed=true" >> "$GITHUB_OUTPUT"
-          gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+          echo "superseded=true" >> "$GITHUB_OUTPUT"
+          gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF" || {
+            echo "::error::dist/ enviado, mas o pipeline não foi disparado no commit novo. Rode: gh workflow run test.yml --ref $HEAD_REF"
+            exit 1
+          }
 
   pipeline:
     needs: [build-dist, commit-dist]
-    # Roda em todo evento, inclusive com os jobs do Dependabot pulados. Só é pulado no
-    # commit cujo dist/ acabou de ser recompilado: o head do PR já é o commit novo, e é o
-    # pipeline dele (disparado pelo commit-dist) que valida o dist/ e libera o merge.
-    # Assim a execução do commit antigo termina sem falha.
-    if: ${{ !cancelled() && needs.commit-dist.outputs.pushed != 'true' }}
+    # Roda em todo evento, inclusive com os jobs do Dependabot pulados. Só é pulado quando
+    # o commit analisado deixou de ser o head (dist/ recompilado agora ou branch que andou):
+    # é o pipeline do commit novo que valida o dist/ e libera o merge. Assim a execução
+    # do commit antigo termina sem falha.
+    if: ${{ !cancelled() && needs.commit-dist.outputs.superseded != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -196,7 +203,7 @@ jobs:
       # Artefatos salvos no CI para auditoria manual
       - name: Preservar relatórios de testes
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports
           retention-days: 14
