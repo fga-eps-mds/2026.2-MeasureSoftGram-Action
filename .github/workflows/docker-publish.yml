@@ -29,3 +29,12 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/action:latest
+
+      # Imagem usada pelo componente do GitLab CI (templates/measure.yml)
+      - name: Build e Push da imagem do GitLab
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          file: ./Dockerfile.gitlab
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/action-gitlab:latest

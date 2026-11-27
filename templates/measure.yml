@@ -1,0 +1,70 @@
+# Componente do MeasureSoftGram para o GitLab CI/CD.
+# Coleta as métricas do SonarQube e do GitLab, envia ao MeasureSoftGram-Service
+# e, em pipelines de Merge Request, comenta o resultado no MR.
+# Uso e exemplos: templates/README.md
+spec:
+  inputs:
+    stage:
+      description: Stage em que o job roda.
+      default: test
+    image:
+      description: Imagem do coletor (Dockerfile.gitlab).
+      default: measuresoftgram/action-gitlab:latest
+    product_name:
+      description: Nome do produto cadastrado no MeasureSoftGram.
+    msgram_service_host:
+      description: URL do MeasureSoftGram-Service.
+    # Os segredos recebem o NOME de uma variável de CI/CD (ex. $MSGRAM_SERVICE_TOKEN),
+    # nunca o valor: os inputs ficam visíveis no YAML do pipeline.
+    msgram_service_token:
+      description: Variável de CI/CD com o token do MeasureSoftGram-Service.
+      default: $MSGRAM_SERVICE_TOKEN
+    gitlab_token:
+      description: Variável de CI/CD com o token do GitLab (escopo api).
+      default: $GITLAB_TOKEN
+    sonar_token:
+      description: Variável de CI/CD com o token do SonarQube/SonarCloud.
+      default: $SONAR_TOKEN
+    sonar_host:
+      description: URL do SonarQube. Vazio usa https://sonarcloud.io.
+      default: ''
+    sonar_project_key:
+      description: Chave do projeto no SonarQube. Vazio usa <namespace>_<projeto>.
+      default: ''
+    us_label:
+      description: Label das issues de história de usuário. Vazio não filtra.
+      default: ''
+    workflow_name:
+      description: Nome dos pipelines (workflow:name) usados no feedback de CI. Vazio não filtra.
+      default: ''
+    collect_sonarqube_metrics:
+      description: Coleta as métricas do SonarQube.
+      type: boolean
+      default: true
+    collect_gitlab_metrics:
+      description: Coleta as métricas de processo do GitLab.
+      type: boolean
+      default: true
+---
+measuresoftgram:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    PRODUCT_NAME: '$[[ inputs.product_name ]]'
+    MSGRAM_SERVICE_HOST: '$[[ inputs.msgram_service_host ]]'
+    SONAR_HOST: '$[[ inputs.sonar_host ]]'
+    SONAR_PROJECT_KEY: '$[[ inputs.sonar_project_key ]]'
+    US_LABEL: '$[[ inputs.us_label ]]'
+    WORKFLOW_NAME: '$[[ inputs.workflow_name ]]'
+    COLLECT_SONARQUBE_METRICS: '$[[ inputs.collect_sonarqube_metrics ]]'
+    COLLECT_GITLAB_METRICS: '$[[ inputs.collect_gitlab_metrics ]]'
+  script:
+    # Os segredos são resolvidos pelo shell, na execução: com o padrão, a linha vira
+    # MSGRAM_SERVICE_TOKEN="$MSGRAM_SERVICE_TOKEN" e evita referência circular em `variables`.
+    - export MSGRAM_SERVICE_TOKEN="$[[ inputs.msgram_service_token ]]"
+    - export GITLAB_TOKEN="$[[ inputs.gitlab_token ]]"
+    - export SONAR_TOKEN="$[[ inputs.sonar_token ]]"
+    - node /opt/msgram/index.js
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
