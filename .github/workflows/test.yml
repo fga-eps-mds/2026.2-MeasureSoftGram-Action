@@ -5,24 +5,154 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # disparado pelo job commit-dist no commit do dist/ recompilado de um PR do Dependabot
+  workflow_dispatch:
+
+permissions: {}
 
 jobs:
-  pipeline:
+  # PR do Dependabot: o dist/ é recompilado com as dependências novas, sem token de
+  # escrita no job. Só o artefato sai daqui.
+  build-dist:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Checkout do commit do PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js 24 com cache do Yarn
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          cache: 'yarn'
+
+      - name: Instalar dependências sem scripts de instalação
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Recompilar o bundle (dist/)
+        run: yarn run build
+
+      - name: Verificar se o dist/ mudou
+        id: diff
+        run: |
+          if [ -n "$(git status --porcelain dist/)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::O bundle dist/ já está atualizado."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Guardar o dist/ recompilado
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+          if-no-files-found: error
+
+  # Único job com escrita: não instala nem executa dependências, só baixa o artefato,
+  # comita e roda este workflow no commit novo (push com o GITHUB_TOKEN não dispara
+  # workflows; o workflow_dispatch é exceção).
+  commit-dist:
+    needs: build-dist
+    if: needs.build-dist.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      # true quando o commit analisado deixou de ser o head: o dist/ foi enviado agora
+      # ou o branch já andou; nos dois casos o commit novo tem a própria execução
+      superseded: ${{ steps.push.outputs.superseded || steps.stale.outputs.superseded }}
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout do branch do PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Conferir que o branch não andou
+        id: stale
+        run: |
+          # se o Dependabot empurrou outro commit, a execução desse commit cuida do dist/
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "::notice::O branch $HEAD_REF mudou desde o build; nada a comitar."
+            echo "STALE=true" >> "$GITHUB_ENV"
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Substituir o dist/ pelo recompilado
+        if: env.STALE != 'true'
+        run: rm -rf dist
+
+      - name: Baixar o dist/ recompilado
+        if: env.STALE != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+
+      - name: Comitar, enviar e rodar o pipeline no commit novo
+        id: push
+        if: env.STALE != 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dist/
+          git commit -m "build(dist): recompila o bundle após atualização de dependências"
+          AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$AUTH"
+          git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+            push origin "HEAD:refs/heads/$HEAD_REF"
+          echo "superseded=true" >> "$GITHUB_OUTPUT"
+          gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF" || {
+            echo "::error::dist/ enviado, mas o pipeline não foi disparado no commit novo. Rode: gh workflow run test.yml --ref $HEAD_REF"
+            exit 1
+          }
+
+  pipeline:
+    needs: [build-dist, commit-dist]
+    # Roda em todo evento, inclusive com os jobs do Dependabot pulados. Só é pulado quando
+    # o commit analisado deixou de ser o head (dist/ recompilado agora ou branch que andou):
+    # é o pipeline do commit novo que valida o dist/ e libera o merge. Assim a execução
+    # do commit antigo termina sem falha.
+    if: ${{ !cancelled() && needs.commit-dist.outputs.superseded != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout do código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup Node.js 20 com cache do Yarn
+      - name: Setup Node.js 24 com cache do Yarn
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20.x
+          node-version: 24.x
           cache: 'yarn'
 
       - name: Instalar dependências
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --ignore-scripts
 
       - name: Rodar Linter (ESLint + Prettier)
         run: yarn lint
@@ -31,6 +161,7 @@ jobs:
         run: yarn ci:test --silent
 
       - name: Validar integridade e compilação do bundle (dist/)
+        # vale para todos, inclusive o Dependabot: no commit do dist/ recompilado ele passa
         run: |
           yarn run build
           if [ -n "$(git status --porcelain dist/)" ]; then
@@ -43,8 +174,10 @@ jobs:
         # O SonarCloud só deve ser executado se:
         # 1. Não for disparado pelo Dependabot (que não possui acesso aos secrets de Actions)
         # 2. O evento for push (merge) OU um PR interno do próprio repositório (não fork externo)
+        # 3. Não for a execução disparada pelo commit-dist no branch do Dependabot (workflow_dispatch)
         if: >-
           github.actor != 'dependabot[bot]' &&
+          github.event_name != 'workflow_dispatch' &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.full_name == github.repository)
         # 'sonar.qualitygate.wait=true' pausa a execução do step e consulta a API do SonarCloud
@@ -62,6 +195,7 @@ jobs:
       - name: Aviso de SonarCloud ignorado (Pull Request externo ou Dependabot)
         if: >-
           github.actor == 'dependabot[bot]' ||
+          github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'pull_request' &&
            github.event.pull_request.head.repo.full_name != github.repository)
         run: echo "::notice::Execução em fork externo ou ator Dependabot sem acesso aos secrets. Análise do SonarCloud ignorada com segurança."
@@ -69,7 +203,7 @@ jobs:
       # Artefatos salvos no CI para auditoria manual
       - name: Preservar relatórios de testes
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-reports
           retention-days: 14
